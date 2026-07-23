@@ -3,8 +3,11 @@ package cli
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/judeadeniji/venndor/internal/npm"
 )
 
 var (
@@ -48,7 +51,28 @@ var addCmd = &cobra.Command{
 	Short: "Vendor a package from npm",
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Printf("TODO: Implement add for %s (yes=%v)\n", args[0], yesFlag)
+		pkgArg := args[0]
+		
+		// Parse pkg and version
+		pkgName := pkgArg
+		version := ""
+		
+		// Handle scoped packages like @org/pkg@1.0.0
+		idx := strings.LastIndex(pkgArg, "@")
+		if idx > 0 { // > 0 to skip the first character in case it's a scoped package
+			pkgName = pkgArg[:idx]
+			version = pkgArg[idx+1:]
+		}
+
+		destDir := filepath.Join("vendor", pkgName)
+
+		fmt.Printf("Vendoring %s into %s...\n", pkgArg, destDir)
+		if err := npm.FetchAndExtract(pkgName, version, destDir); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+		
+		fmt.Printf("Successfully vendored %s\n", pkgName)
 	},
 }
 
