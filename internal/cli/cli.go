@@ -8,6 +8,7 @@ import (
 
 	"github.com/judeadeniji/venndor/internal/manifest"
 	"github.com/judeadeniji/venndor/internal/npm"
+	"github.com/judeadeniji/venndor/internal/patch"
 	"github.com/judeadeniji/venndor/internal/pm"
 	"github.com/spf13/cobra"
 )
@@ -129,10 +130,64 @@ var updateCmd = &cobra.Command{
 
 var diffCmd = &cobra.Command{
 	Use:   "diff <pkg>",
-	Short: "Show local modifications vs. baseline",
+	Short: "Generate a patch file for a vendored package",
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Printf("TODO: Implement diff for %s\n", args[0])
+		pkgName := args[0]
+		
+		fmt.Printf("Generating diff for %s...\n", pkgName)
+
+		pkgConfig, err := manifest.GetPackageConfig(pkgName)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+
+		cachePath := npm.GetCachePath(pkgName, pkgConfig.Version)
+		if _, err := os.Stat(cachePath); os.IsNotExist(err) {
+			lock, err := manifest.GetPackageLock(pkgName)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: cache missing and could not read lockfile: %v\n", err)
+				os.Exit(1)
+			}
+			fmt.Printf("Cache missing. Re-downloading %s...\n", lock.Resolved)
+			if err := npm.Download(lock.Resolved, cachePath); err != nil {
+				fmt.Fprintf(os.Stderr, "Error: failed to download tarball: %v\n", err)
+				os.Exit(1)
+			}
+		}
+
+		tmpDir, err := os.MkdirTemp("", "venndor-diff-*")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: failed to create temp dir: %v\n", err)
+			os.Exit(1)
+		}
+		defer os.RemoveAll(tmpDir)
+
+		pristineDir := filepath.Join(tmpDir, pkgName)
+		if err := npm.ExtractLocalTarGz(cachePath, pristineDir); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: failed to extract pristine tarball: %v\n", err)
+			os.Exit(1)
+		}
+
+		vendoredDir := filepath.Join("vendor", pkgName)
+		
+		foundDiff, err := patch.Generate(pkgName, pristineDir, vendoredDir)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error generating patch: %v\n", err)
+			os.Exit(1)
+		}
+
+		if foundDiff {
+			safeName := strings.ReplaceAll(pkgName, "/", "-")
+			patchFile := filepath.Join("patches", safeName+".patch")
+			if err := manifest.MarkPatched(pkgName, patchFile); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to update manifest: %v\n", err)
+			}
+			fmt.Printf("Patch generated at %s\n", patchFile)
+		} else {
+			fmt.Printf("No differences found. Package is clean.\n")
+		}
 	},
 }
 

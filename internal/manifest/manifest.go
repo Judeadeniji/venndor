@@ -54,7 +54,7 @@ func RecordManifest(pkgName, version, tarballURL, destDir string) error {
 
 func ensureVendorYAML(pkgName, version, path, importAlias string) error {
 	yamlPath := "vendor.yaml"
-	
+
 	var config VendorYAML
 	b, err := os.ReadFile(yamlPath)
 	if err == nil {
@@ -122,8 +122,71 @@ func ensureVendorLock(pkgName, version, tarballURL string) error {
 	if err != nil {
 		return err
 	}
-	
+
 	// Add trailing newline
 	out = append(out, '\n')
 	return os.WriteFile(lockPath, out, 0644)
+}
+
+func GetPackageConfig(pkgName string) (*PackageYML, error) {
+	b, err := os.ReadFile("vendor.yaml")
+	if err != nil {
+		return nil, err
+	}
+	var config VendorYAML
+	if err := yaml.Unmarshal(b, &config); err != nil {
+		return nil, err
+	}
+	pkg, ok := config.Packages[pkgName]
+	if !ok {
+		return nil, fmt.Errorf("package %s not found in vendor.yaml", pkgName)
+	}
+	return pkg, nil
+}
+
+func GetPackageLock(pkgName string) (*PackageLock, error) {
+	b, err := os.ReadFile("vendor-lock.json")
+	if err != nil {
+		return nil, err
+	}
+	var lock VendorLock
+	if err := json.Unmarshal(b, &lock); err != nil {
+		return nil, err
+	}
+	pkg, ok := lock.Packages[pkgName]
+	if !ok {
+		return nil, fmt.Errorf("package %s not found in vendor-lock.json", pkgName)
+	}
+	return pkg, nil
+}
+
+func MarkPatched(pkgName, patchFile string) error {
+	// Update vendor.yaml
+	b, err := os.ReadFile("vendor.yaml")
+	if err == nil {
+		var config VendorYAML
+		if err := yaml.Unmarshal(b, &config); err == nil {
+			if pkg, ok := config.Packages[pkgName]; ok {
+				pkg.Patched = true
+				out, _ := yaml.Marshal(&config)
+				os.WriteFile("vendor.yaml", out, 0644)
+			}
+		}
+	}
+
+	// Update vendor-lock.json
+	b2, err := os.ReadFile("vendor-lock.json")
+	if err == nil {
+		var lock VendorLock
+		if err := json.Unmarshal(b2, &lock); err == nil {
+			if pkg, ok := lock.Packages[pkgName]; ok {
+				pkg.PatchFile = patchFile
+				out, _ := json.MarshalIndent(&lock, "", "  ")
+				out = append(out, '\n')
+				os.WriteFile("vendor-lock.json", out, 0644)
+			}
+		}
+	}
+
+	return nil
 }

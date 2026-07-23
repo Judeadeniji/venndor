@@ -159,3 +159,45 @@ func extractTarGz(r io.Reader, destDir string) error {
 
 	return nil
 }
+
+// GetCachePath returns the expected file path of the cached tarball.
+func GetCachePath(pkgName, version string) string {
+	safeName := strings.ReplaceAll(pkgName, "/", "-")
+	return filepath.Join("node_modules", ".vendor-cache", fmt.Sprintf("%s-%s.tgz", safeName, version))
+}
+
+// ExtractLocalTarGz extracts a local .tgz file to the specified directory.
+func ExtractLocalTarGz(tarPath, destDir string) error {
+	f, err := os.Open(tarPath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	return extractTarGz(f, destDir)
+}
+
+// Download fetches a file from a URL and saves it to the specified destination path.
+func Download(url, destPath string) error {
+	if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
+		return err
+	}
+	
+	resp, err := http.Get(url)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to download tarball, status: %s", resp.Status)
+	}
+
+	out, err := os.Create(destPath)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	_, err = io.Copy(out, resp.Body)
+	return err
+}

@@ -5,5 +5,5 @@ packages:
         source: npm
         path: vendor/is-odd
         import: '#vendor/is-odd'
-        patched: false
+        patched: true
         notes: ""
