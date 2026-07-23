@@ -1,0 +1,9 @@
+version: 1
+packages:
+    is-odd:
+        version: 3.0.1
+        source: npm
+        path: vendor/is-odd
+        import: '#vendor/is-odd'
+        patched: false
+        notes: ""

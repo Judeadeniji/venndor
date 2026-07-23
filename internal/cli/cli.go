@@ -68,7 +68,8 @@ var addCmd = &cobra.Command{
 		destDir := filepath.Join("vendor", pkgName)
 
 		fmt.Printf("Vendoring %s into %s...\n", pkgArg, destDir)
-		if err := npm.FetchAndExtract(pkgName, version, destDir); err != nil {
+		targetVersion, tarballURL, err := npm.FetchAndExtract(pkgName, version, destDir)
+		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
@@ -83,8 +84,13 @@ var addCmd = &cobra.Command{
 		if err := manifest.EnsureImport(pkgJSONPath, pkgName); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to add import alias: %v\n", err)
 		}
+
+		fmt.Printf("Updating vendor.yaml and vendor-lock.json...\n")
+		if err := manifest.RecordManifest(pkgName, targetVersion, tarballURL, destDir); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to write manifest: %v\n", err)
+		}
 		
-		fmt.Printf("Successfully vendored %s\n", pkgName)
+		fmt.Printf("Successfully vendored %s@%s\n", pkgName, targetVersion)
 	},
 }
 

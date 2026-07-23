@@ -7,6 +7,7 @@ require (
 	github.com/tidwall/gjson v1.19.0
 	github.com/tidwall/pretty v1.2.0
 	github.com/tidwall/sjson v1.2.5
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (

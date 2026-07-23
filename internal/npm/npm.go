@@ -29,23 +29,23 @@ type Version struct {
 }
 
 // FetchAndExtract resolves the package version, downloads the tarball, and extracts it to the destination directory.
-// If version is empty, it uses the "latest" dist-tag.
-func FetchAndExtract(pkgName, version, destDir string) error {
+// Returns the resolved version and the tarball URL.
+func FetchAndExtract(pkgName, version, destDir string) (string, string, error) {
 	// 1. Fetch metadata
 	metaURL := fmt.Sprintf("https://registry.npmjs.org/%s", pkgName)
 	resp, err := http.Get(metaURL)
 	if err != nil {
-		return fmt.Errorf("failed to fetch metadata: %w", err)
+		return "", "", fmt.Errorf("failed to fetch metadata: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("registry returned status %s for package %s", resp.Status, pkgName)
+		return "", "", fmt.Errorf("registry returned status %s for package %s", resp.Status, pkgName)
 	}
 
 	var meta PackageMeta
 	if err := json.NewDecoder(resp.Body).Decode(&meta); err != nil {
-		return fmt.Errorf("failed to decode metadata: %w", err)
+		return "", "", fmt.Errorf("failed to decode metadata: %w", err)
 	}
 
 	// 2. Resolve version
@@ -53,19 +53,19 @@ func FetchAndExtract(pkgName, version, destDir string) error {
 	if targetVersion == "" {
 		latest, ok := meta.DistTags["latest"]
 		if !ok {
-			return fmt.Errorf("no 'latest' tag found for %s", pkgName)
+			return "", "", fmt.Errorf("no 'latest' tag found for %s", pkgName)
 		}
 		targetVersion = latest
 	}
 
 	vData, ok := meta.Versions[targetVersion]
 	if !ok {
-		return fmt.Errorf("version %s not found for %s", targetVersion, pkgName)
+		return "", "", fmt.Errorf("version %s not found for %s", targetVersion, pkgName)
 	}
 
 	tarballURL := vData.Dist.Tarball
 	if tarballURL == "" {
-		return fmt.Errorf("no tarball URL found for %s@%s", pkgName, targetVersion)
+		return "", "", fmt.Errorf("no tarball URL found for %s@%s", pkgName, targetVersion)
 	}
 
 	fmt.Printf("Fetching %s@%s...\n", pkgName, targetVersion)
@@ -73,16 +73,20 @@ func FetchAndExtract(pkgName, version, destDir string) error {
 	// 3. Download tarball
 	tarResp, err := http.Get(tarballURL)
 	if err != nil {
-		return fmt.Errorf("failed to download tarball: %w", err)
+		return "", "", fmt.Errorf("failed to download tarball: %w", err)
 	}
 	defer tarResp.Body.Close()
 
 	if tarResp.StatusCode != http.StatusOK {
-		return fmt.Errorf("failed to download tarball, status: %s", tarResp.Status)
+		return "", "", fmt.Errorf("failed to download tarball, status: %s", tarResp.Status)
 	}
 
 	// 4. Extract tarball
-	return extractTarGz(tarResp.Body, destDir)
+	if err := extractTarGz(tarResp.Body, destDir); err != nil {
+		return "", "", err
+	}
+
+	return targetVersion, tarballURL, nil
 }
 
 func extractTarGz(r io.Reader, destDir string) error {
