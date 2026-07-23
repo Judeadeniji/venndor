@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/judeadeniji/venndor/internal/cache"
 	"github.com/judeadeniji/venndor/internal/manifest"
 	"github.com/judeadeniji/venndor/internal/npm"
 	"github.com/judeadeniji/venndor/internal/pm"
@@ -73,6 +74,11 @@ var addCmd = &cobra.Command{
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
+		}
+
+		fmt.Printf("Caching baseline snapshot...\n")
+		if err := cache.StashBaseline(destDir, pkgName, targetVersion); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to cache baseline: %v\n", err)
 		}
 
 		fmt.Printf("Configuring workspace and imports...\n")
