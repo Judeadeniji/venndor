@@ -1,0 +1,26 @@
+{
+  "name": "venndor",
+  "version": "1.0.0",
+  "description": "Vendor npm packages directly into your repo as owned source.",
+  "main": "npm/run.js",
+  "bin": {
+    "venndor": "npm/run.js",
+    "vendor": "npm/run.js"
+  },
+  "scripts": {
+    "postinstall": "node npm/install.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/judeadeniji/venndor.git"
+  },
+  "keywords": [
+    "vendor",
+    "npm",
+    "package",
+    "manager",
+    "cli"
+  ],
+  "author": "Jude Adeniji",
+  "license": "MIT"
+}
