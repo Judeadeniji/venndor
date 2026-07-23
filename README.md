@@ -8,7 +8,6 @@ With `venndor`, you can make local hacks or emergency fixes to npm packages seam
 
 ## Features
 
-- **No `postinstall` Magic**: Distributed gracefully as native binary drops on NPM via `optionalDependencies`.
 - **Intelligent Package Manager Detection**: Automatically intercepts `npm`, `yarn`, `pnpm`, or `bun` via lockfiles or `corepack`.
 - **Zero Configuration**: Non-destructive integration with your `package.json` workspaces. Modifies files via surgically precise AST-like string modifications.
 - **Diff & Patch Generation**: Generates standard unified diff patches and stores them automatically in `patches/`.
