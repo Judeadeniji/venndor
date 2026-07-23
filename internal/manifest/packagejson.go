@@ -6,8 +6,22 @@ import (
 	"os"
 
 	"github.com/tidwall/gjson"
+	"github.com/tidwall/pretty"
 	"github.com/tidwall/sjson"
 )
+
+func writeFormattedJSON(path string, data []byte) error {
+	opts := pretty.Options{
+		Indent:   "  ",
+		SortKeys: false,
+	}
+	formatted := pretty.PrettyOptions(data, &opts)
+	// Add trailing newline to match standard formatting
+	if len(formatted) > 0 && formatted[len(formatted)-1] != '\n' {
+		formatted = append(formatted, '\n')
+	}
+	return os.WriteFile(path, formatted, 0644)
+}
 
 // EnsureWorkspace ensures that "vendor/*" is in the workspaces array of package.json.
 func EnsureWorkspace(pkgJSONPath string) error {
@@ -27,7 +41,7 @@ func EnsureWorkspace(pkgJSONPath string) error {
 		if err != nil {
 			return err
 		}
-		return os.WriteFile(pkgJSONPath, []byte(newJSON), 0644)
+		return writeFormattedJSON(pkgJSONPath, []byte(newJSON))
 	}
 
 	if !workspaces.IsArray() {
@@ -48,7 +62,7 @@ func EnsureWorkspace(pkgJSONPath string) error {
 		if err != nil {
 			return err
 		}
-		return os.WriteFile(pkgJSONPath, []byte(newJSON), 0644)
+		return writeFormattedJSON(pkgJSONPath, []byte(newJSON))
 	}
 
 	return nil
@@ -96,5 +110,5 @@ func EnsureImport(pkgJSONPath, pkgName string) error {
 		return err
 	}
 
-	return os.WriteFile(pkgJSONPath, []byte(newJSON), 0644)
+	return writeFormattedJSON(pkgJSONPath, []byte(newJSON))
 }

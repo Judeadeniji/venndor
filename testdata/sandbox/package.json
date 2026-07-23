@@ -8,7 +8,11 @@
   },
   "keywords": [],
   "author": "",
-  "license": "ISC"
-,"workspaces":["vendor/*"],"imports":{
-  "#vendor/is-odd": "./vendor/is-odd"
-}}
+  "license": "ISC",
+  "workspaces": [
+    "vendor/*"
+  ],
+  "imports": {
+    "#vendor/is-odd": "./vendor/is-odd"
+  }
+}
