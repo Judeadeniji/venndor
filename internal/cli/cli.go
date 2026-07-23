@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/judeadeniji/venndor/internal/cache"
 	"github.com/judeadeniji/venndor/internal/manifest"
 	"github.com/judeadeniji/venndor/internal/npm"
 	"github.com/judeadeniji/venndor/internal/pm"
@@ -55,11 +54,11 @@ var addCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		pkgArg := args[0]
-		
+
 		// Parse pkg and version
 		pkgName := pkgArg
 		version := ""
-		
+
 		// Handle scoped packages like @org/pkg@1.0.0
 		idx := strings.LastIndex(pkgArg, "@")
 		if idx > 0 { // > 0 to skip the first character in case it's a scoped package
@@ -76,18 +75,13 @@ var addCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		fmt.Printf("Caching baseline snapshot...\n")
-		if err := cache.StashBaseline(destDir, pkgName, targetVersion); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to cache baseline: %v\n", err)
-		}
-
 		fmt.Printf("Configuring workspace and imports...\n")
 		pkgJSONPath := "package.json"
-		
+
 		if err := manifest.EnsureWorkspace(pkgJSONPath); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to add to workspaces: %v\n", err)
 		}
-		
+
 		if err := manifest.EnsureImport(pkgJSONPath, pkgName); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to add import alias: %v\n", err)
 		}
@@ -96,7 +90,7 @@ var addCmd = &cobra.Command{
 		if err := manifest.RecordManifest(pkgName, targetVersion, tarballURL, destDir); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to write manifest: %v\n", err)
 		}
-		
+
 		fmt.Printf("Running install...\n")
 		manager, useCorepack, err := pm.Detect()
 		if err != nil {
@@ -153,10 +147,10 @@ var statusCmd = &cobra.Command{
 }
 
 var syncCmd = &cobra.Command{
-	Use:   "sync",
-	Short: "Re-apply workspace registration and install",
+	Use:     "sync",
+	Short:   "Re-apply workspace registration and install",
 	Aliases: []string{"install"},
-	Args:  cobra.NoArgs,
+	Args:    cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println("TODO: Implement sync")
 	},

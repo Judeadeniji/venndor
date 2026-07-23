@@ -81,8 +81,23 @@ func FetchAndExtract(pkgName, version, destDir string) (string, string, error) {
 		return "", "", fmt.Errorf("failed to download tarball, status: %s", tarResp.Status)
 	}
 
-	// 4. Extract tarball
-	if err := extractTarGz(tarResp.Body, destDir); err != nil {
+	// 4. Set up cache file in node_modules/.vendor-cache
+	safeName := strings.ReplaceAll(pkgName, "/", "-")
+	cacheDir := filepath.Join("node_modules", ".vendor-cache")
+	if err := os.MkdirAll(cacheDir, 0755); err != nil {
+		return "", "", err
+	}
+	cachePath := filepath.Join(cacheDir, fmt.Sprintf("%s-%s.tgz", safeName, targetVersion))
+
+	cf, err := os.Create(cachePath)
+	if err != nil {
+		return "", "", err
+	}
+	defer cf.Close()
+
+	// 5. Extract tarball while streaming to cache file
+	tee := io.TeeReader(tarResp.Body, cf)
+	if err := extractTarGz(tee, destDir); err != nil {
 		return "", "", err
 	}
 
