@@ -48,3 +48,18 @@ func Generate(pkgName, pristineDir, vendoredDir string) (bool, error) {
 	os.Remove(patchFile) // Clean up empty patch file
 	return false, nil
 }
+
+// Apply applies a patch file to a target directory.
+func Apply(patchFile, targetDir string) error {
+	absPatch, err := filepath.Abs(patchFile)
+	if err != nil {
+		return err
+	}
+
+	cmd := exec.Command("patch", "-p2", "-i", absPatch)
+	cmd.Dir = targetDir
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	return cmd.Run()
+}

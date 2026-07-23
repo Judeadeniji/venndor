@@ -120,11 +120,80 @@ var updateCmd = &cobra.Command{
 	Short: "Update a vendored package (or all if omitted)",
 	Args:  cobra.MaximumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		pkg := "all"
-		if len(args) > 0 {
-			pkg = args[0]
+		if len(args) == 0 {
+			fmt.Println("TODO: Implement update all")
+			return
 		}
-		fmt.Printf("TODO: Implement update for %s\n", pkg)
+		pkgName := args[0]
+		
+		fmt.Printf("Updating %s...\n", pkgName)
+
+		pkgConfig, err := manifest.GetPackageConfig(pkgName)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: package %s not found in vendor.yaml\n", pkgName)
+			os.Exit(1)
+		}
+
+		// 1. Fetch metadata to find the latest version
+		targetVersion, tarballURL, err := npm.FetchMetadata(pkgName, "")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error fetching metadata: %v\n", err)
+			os.Exit(1)
+		}
+
+		if pkgConfig.Version == targetVersion {
+			fmt.Printf("Package %s is already up to date (%s)\n", pkgName, targetVersion)
+			return
+		}
+
+		fmt.Printf("Found newer version: %s (current: %s)\n", targetVersion, pkgConfig.Version)
+
+		destDir := filepath.Join("vendor", pkgName)
+
+		// 2. Download and extract new version
+		// FetchAndExtract also saves to node_modules/.vendor-cache
+		_, _, err = npm.FetchAndExtract(pkgName, targetVersion, destDir)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error updating package: %v\n", err)
+			os.Exit(1)
+		}
+
+		// 3. Re-apply patches if any
+		if pkgConfig.Patched {
+			safeName := strings.ReplaceAll(pkgName, "/", "-")
+			patchFile := filepath.Join("patches", safeName+".patch")
+			
+			fmt.Printf("Re-applying patch %s...\n", patchFile)
+			if err := patch.Apply(patchFile, destDir); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to cleanly apply patch. You may need to resolve conflicts manually.\nError: %v\n", err)
+			} else {
+				fmt.Printf("Patch applied successfully.\n")
+			}
+		}
+
+		// 4. Update manifest
+		if err := manifest.RecordManifest(pkgName, targetVersion, tarballURL, destDir); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to write manifest: %v\n", err)
+		}
+
+		// Ensure patched flag is preserved
+		if pkgConfig.Patched {
+			safeName := strings.ReplaceAll(pkgName, "/", "-")
+			patchFile := filepath.Join("patches", safeName+".patch")
+			manifest.MarkPatched(pkgName, patchFile)
+		}
+
+		fmt.Printf("Running install...\n")
+		manager, useCorepack, err := pm.Detect()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to detect package manager: %v\n", err)
+		} else {
+			if err := pm.Install(manager, useCorepack); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: install failed: %v\n", err)
+			}
+		}
+
+		fmt.Printf("Successfully updated %s to %s\n", pkgName, targetVersion)
 	},
 }
 

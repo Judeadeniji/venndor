@@ -28,10 +28,9 @@ type Version struct {
 	} `json:"dist"`
 }
 
-// FetchAndExtract resolves the package version, downloads the tarball, and extracts it to the destination directory.
-// Returns the resolved version and the tarball URL.
-func FetchAndExtract(pkgName, version, destDir string) (string, string, error) {
-	// 1. Fetch metadata
+// FetchMetadata retrieves package metadata and resolves the target version.
+// It returns targetVersion, tarballURL, and error.
+func FetchMetadata(pkgName, version string) (string, string, error) {
 	metaURL := fmt.Sprintf("https://registry.npmjs.org/%s", pkgName)
 	resp, err := http.Get(metaURL)
 	if err != nil {
@@ -48,7 +47,6 @@ func FetchAndExtract(pkgName, version, destDir string) (string, string, error) {
 		return "", "", fmt.Errorf("failed to decode metadata: %w", err)
 	}
 
-	// 2. Resolve version
 	targetVersion := version
 	if targetVersion == "" {
 		latest, ok := meta.DistTags["latest"]
@@ -66,6 +64,17 @@ func FetchAndExtract(pkgName, version, destDir string) (string, string, error) {
 	tarballURL := vData.Dist.Tarball
 	if tarballURL == "" {
 		return "", "", fmt.Errorf("no tarball URL found for %s@%s", pkgName, targetVersion)
+	}
+
+	return targetVersion, tarballURL, nil
+}
+
+// FetchAndExtract resolves the package version, downloads the tarball, and extracts it to the destination directory.
+// Returns the resolved version and the tarball URL.
+func FetchAndExtract(pkgName, version, destDir string) (string, string, error) {
+	targetVersion, tarballURL, err := FetchMetadata(pkgName, version)
+	if err != nil {
+		return "", "", err
 	}
 
 	fmt.Printf("Fetching %s@%s...\n", pkgName, targetVersion)
