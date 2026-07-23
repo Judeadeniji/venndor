@@ -20,7 +20,7 @@ func Generate(pkgName, pristineDir, vendoredDir string) (bool, error) {
 
 	// diff -urN pristine vendored > patchFile
 	cmd := exec.Command("diff", "-urN", pristineDir, vendoredDir)
-	
+
 	out, err := os.Create(patchFile)
 	if err != nil {
 		return false, err
@@ -31,7 +31,7 @@ func Generate(pkgName, pristineDir, vendoredDir string) (bool, error) {
 	cmd.Stderr = os.Stderr
 
 	err = cmd.Run()
-	
+
 	// diff exits with 1 if differences were found
 	if exitErr, ok := err.(*exec.ExitError); ok {
 		if exitErr.ExitCode() == 1 {

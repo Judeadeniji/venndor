@@ -190,7 +190,7 @@ func Download(url, destPath string) error {
 	if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
 		return err
 	}
-	
+
 	resp, err := http.Get(url)
 	if err != nil {
 		return err

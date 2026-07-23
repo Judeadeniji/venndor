@@ -128,7 +128,7 @@ func RemoveImport(packageJSONPath, pkgName string) error {
 
 	// sjson requires escaping for special characters in keys like # and /
 	// but actually sjson handles paths. Since alias has / and # we should just delete from the map.
-	
+
 	importsResult := gjson.Get(jsonStr, "imports")
 	if !importsResult.Exists() || importsResult.Type != gjson.JSON {
 		return nil
