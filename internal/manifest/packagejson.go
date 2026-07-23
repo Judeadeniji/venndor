@@ -112,3 +112,57 @@ func EnsureImport(pkgJSONPath, pkgName string) error {
 
 	return writeFormattedJSON(pkgJSONPath, []byte(newJSON))
 }
+
+// RemoveImport removes the #vendor/<pkgName> import alias from package.json
+func RemoveImport(packageJSONPath, pkgName string) error {
+	b, err := os.ReadFile(packageJSONPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	jsonStr := string(b)
+
+	alias := fmt.Sprintf("#vendor/%s", pkgName)
+
+	// sjson requires escaping for special characters in keys like # and /
+	// but actually sjson handles paths. Since alias has / and # we should just delete from the map.
+	
+	importsResult := gjson.Get(jsonStr, "imports")
+	if !importsResult.Exists() || importsResult.Type != gjson.JSON {
+		return nil
+	}
+
+	importsMap := make(map[string]interface{})
+	if err := json.Unmarshal([]byte(importsResult.Raw), &importsMap); err != nil {
+		return fmt.Errorf("failed to parse existing imports: %v", err)
+	}
+
+	if _, exists := importsMap[alias]; !exists {
+		return nil // Not found
+	}
+
+	delete(importsMap, alias)
+
+	if len(importsMap) == 0 {
+		// Remove the whole imports block if empty
+		newJSON, err := sjson.Delete(jsonStr, "imports")
+		if err != nil {
+			return err
+		}
+		return writeFormattedJSON(packageJSONPath, []byte(newJSON))
+	}
+
+	newImportsJSON, err := json.MarshalIndent(importsMap, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	newJSON, err := sjson.SetRaw(jsonStr, "imports", string(newImportsJSON))
+	if err != nil {
+		return err
+	}
+
+	return writeFormattedJSON(packageJSONPath, []byte(newJSON))
+}

@@ -190,3 +190,35 @@ func MarkPatched(pkgName, patchFile string) error {
 
 	return nil
 }
+
+// RemoveManifest removes a package from vendor.yaml and vendor-lock.json
+func RemoveManifest(pkgName string) error {
+	// Update vendor.yaml
+	b, err := os.ReadFile("vendor.yaml")
+	if err == nil {
+		var config VendorYAML
+		if err := yaml.Unmarshal(b, &config); err == nil {
+			if _, ok := config.Packages[pkgName]; ok {
+				delete(config.Packages, pkgName)
+				out, _ := yaml.Marshal(&config)
+				os.WriteFile("vendor.yaml", out, 0644)
+			}
+		}
+	}
+
+	// Update vendor-lock.json
+	b2, err := os.ReadFile("vendor-lock.json")
+	if err == nil {
+		var lock VendorLock
+		if err := json.Unmarshal(b2, &lock); err == nil {
+			if _, ok := lock.Packages[pkgName]; ok {
+				delete(lock.Packages, pkgName)
+				out, _ := json.MarshalIndent(&lock, "", "  ")
+				out = append(out, '\n')
+				os.WriteFile("vendor-lock.json", out, 0644)
+			}
+		}
+	}
+
+	return nil
+}

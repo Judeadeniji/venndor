@@ -111,7 +111,45 @@ var removeCmd = &cobra.Command{
 	Short: "Remove a vendored package",
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Printf("TODO: Implement remove for %s\n", args[0])
+		pkgName := args[0]
+		fmt.Printf("Removing %s...\n", pkgName)
+
+		// 1. Remove from vendor.yaml and vendor-lock.json
+		if err := manifest.RemoveManifest(pkgName); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to update manifest files: %v\n", err)
+		}
+
+		// 2. Remove import alias from package.json
+		pkgJSONPath := "package.json"
+		if err := manifest.RemoveImport(pkgJSONPath, pkgName); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to remove import alias: %v\n", err)
+		}
+
+		// 3. Delete vendor files
+		destDir := filepath.Join("vendor", pkgName)
+		if err := os.RemoveAll(destDir); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to delete %s: %v\n", destDir, err)
+		}
+
+		// 4. Delete patch file if it exists
+		safeName := strings.ReplaceAll(pkgName, "/", "-")
+		patchFile := filepath.Join("patches", safeName+".patch")
+		os.Remove(patchFile)
+
+		// 5. Delete from cache (optional but keeps node_modules/.vendor-cache clean)
+		// We could do this if we look up the version first, but for now it's okay to leave or let npm prune.
+
+		fmt.Printf("Running install to sync node_modules...\n")
+		manager, useCorepack, err := pm.Detect()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to detect package manager: %v\n", err)
+		} else {
+			if err := pm.Install(manager, useCorepack); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: install failed: %v\n", err)
+			}
+		}
+
+		fmt.Printf("Successfully removed %s\n", pkgName)
 	},
 }
 
