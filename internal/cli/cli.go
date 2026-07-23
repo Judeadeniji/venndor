@@ -8,6 +8,7 @@ import (
 
 	"github.com/judeadeniji/venndor/internal/manifest"
 	"github.com/judeadeniji/venndor/internal/npm"
+	"github.com/judeadeniji/venndor/internal/pm"
 	"github.com/spf13/cobra"
 )
 
@@ -90,6 +91,16 @@ var addCmd = &cobra.Command{
 			fmt.Fprintf(os.Stderr, "Warning: failed to write manifest: %v\n", err)
 		}
 		
+		fmt.Printf("Running install...\n")
+		manager, useCorepack, err := pm.Detect()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to detect package manager: %v\n", err)
+		} else {
+			if err := pm.Install(manager, useCorepack); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: install failed: %v\n", err)
+			}
+		}
+
 		fmt.Printf("Successfully vendored %s@%s\n", pkgName, targetVersion)
 	},
 }
