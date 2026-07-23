@@ -11,6 +11,7 @@ import (
 	"github.com/judeadeniji/venndor/internal/patch"
 	"github.com/judeadeniji/venndor/internal/pm"
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 )
 
 var (
@@ -304,7 +305,47 @@ var statusCmd = &cobra.Command{
 	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
 		checkUpdates, _ := cmd.Flags().GetBool("check-updates")
-		fmt.Printf("TODO: Implement status (check-updates=%v)\n", checkUpdates)
+		
+		b, err := os.ReadFile("vendor.yaml")
+		if err != nil {
+			if os.IsNotExist(err) {
+				fmt.Println("No vendor.yaml found. Repo is not tracking any vendored packages.")
+				return
+			}
+			fmt.Fprintf(os.Stderr, "Error reading vendor.yaml: %v\n", err)
+			os.Exit(1)
+		}
+
+		var config manifest.VendorYAML
+		if err := yaml.Unmarshal(b, &config); err != nil {
+			fmt.Fprintf(os.Stderr, "Error parsing vendor.yaml: %v\n", err)
+			os.Exit(1)
+		}
+
+		if len(config.Packages) == 0 {
+			fmt.Println("No vendored packages found.")
+			return
+		}
+
+		fmt.Printf("Vendored packages (%d):\n", len(config.Packages))
+		for name, pkg := range config.Packages {
+			statusLine := fmt.Sprintf("  - %s@%s", name, pkg.Version)
+			if pkg.Patched {
+				statusLine += " [PATCHED]"
+			}
+			
+			if checkUpdates {
+				latest, _, err := npm.FetchMetadata(name, "")
+				if err != nil {
+					statusLine += fmt.Sprintf(" (error checking updates: %v)", err)
+				} else if latest != pkg.Version {
+					statusLine += fmt.Sprintf(" -> Update available: %s", latest)
+				} else {
+					statusLine += " (up to date)"
+				}
+			}
+			fmt.Println(statusLine)
+		}
 	},
 }
 
@@ -314,7 +355,36 @@ var syncCmd = &cobra.Command{
 	Aliases: []string{"install"},
 	Args:    cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("TODO: Implement sync")
+		fmt.Println("Syncing workspace...")
+		
+		pkgJSONPath := "package.json"
+		if err := manifest.EnsureWorkspace(pkgJSONPath); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to add to workspaces: %v\n", err)
+		}
+
+		b, err := os.ReadFile("vendor.yaml")
+		if err == nil {
+			var config manifest.VendorYAML
+			if err := yaml.Unmarshal(b, &config); err == nil {
+				for name := range config.Packages {
+					if err := manifest.EnsureImport(pkgJSONPath, name); err != nil {
+						fmt.Fprintf(os.Stderr, "Warning: failed to restore import alias for %s: %v\n", name, err)
+					}
+				}
+			}
+		}
+
+		fmt.Println("Running install to sync node_modules...")
+		manager, useCorepack, err := pm.Detect()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to detect package manager: %v\n", err)
+		} else {
+			if err := pm.Install(manager, useCorepack); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: install failed: %v\n", err)
+			}
+		}
+
+		fmt.Println("Workspace sync complete.")
 	},
 }
 
@@ -323,6 +393,28 @@ var initCmd = &cobra.Command{
 	Short: "First-time setup",
 	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("TODO: Implement init")
+		fmt.Println("Initializing venndor...")
+
+		if _, err := os.Stat("vendor.yaml"); os.IsNotExist(err) {
+			os.WriteFile("vendor.yaml", []byte("version: 1\npackages: {}\n"), 0644)
+			fmt.Println("Created vendor.yaml")
+		} else {
+			fmt.Println("vendor.yaml already exists")
+		}
+
+		if _, err := os.Stat("vendor-lock.json"); os.IsNotExist(err) {
+			os.WriteFile("vendor-lock.json", []byte("{\n  \"lockfileVersion\": 1,\n  \"packages\": {}\n}\n"), 0644)
+			fmt.Println("Created vendor-lock.json")
+		} else {
+			fmt.Println("vendor-lock.json already exists")
+		}
+
+		if err := manifest.EnsureWorkspace("package.json"); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to set up workspaces in package.json: %v\n", err)
+		} else {
+			fmt.Println("Configured workspaces in package.json")
+		}
+
+		fmt.Println("Initialization complete. Run `vendor add <pkg>` to vendor your first package!")
 	},
 }
