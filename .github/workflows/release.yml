@@ -41,17 +41,9 @@ jobs:
           node-version: '20'
           registry-url: 'https://registry.npmjs.org'
       
-      - name: Update package version
+      - name: Publish to NPM via Optional Dependencies
         run: |
           VERSION=${GITHUB_REF#refs/tags/v}
-          npm version $VERSION --no-git-tag-version
-      
-      - name: Publish to NPM
-        run: |
-          if [[ "$VERSION" == *"-"* ]]; then
-            npm publish --tag next
-          else
-            npm publish
-          fi
+          VERSION=$VERSION node .github/scripts/publish.js
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

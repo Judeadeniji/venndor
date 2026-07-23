@@ -7,9 +7,6 @@
     "venndor": "npm/run.js",
     "vendor": "npm/run.js"
   },
-  "scripts": {
-    "postinstall": "node npm/install.js"
-  },
   "repository": {
     "type": "git",
     "url": "https://github.com/judeadeniji/venndor.git"
