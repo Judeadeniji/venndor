@@ -4,45 +4,51 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+
+	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 )
 
 // EnsureWorkspace ensures that "vendor/*" is in the workspaces array of package.json.
 func EnsureWorkspace(pkgJSONPath string) error {
-	data, err := readJSON(pkgJSONPath)
+	b, err := os.ReadFile(pkgJSONPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			// No package.json, nothing to do or create one? Let's just return error for now.
 			return fmt.Errorf("no package.json found at %s", pkgJSONPath)
 		}
 		return err
 	}
+	jsonStr := string(b)
 
-	workspacesRaw, ok := data["workspaces"]
-	var workspaces []interface{}
-
-	if ok {
-		// workspaces can be an array or an object (e.g., yarn workspaces with 'packages')
-		// We'll handle the array case for simplicity here.
-		if wArr, isArr := workspacesRaw.([]interface{}); isArr {
-			workspaces = wArr
-		} else {
-			return fmt.Errorf("unsupported workspaces format in package.json")
+	workspaces := gjson.Get(jsonStr, "workspaces")
+	if !workspaces.Exists() {
+		// Create a new array with "vendor/*"
+		newJSON, err := sjson.Set(jsonStr, "workspaces", []string{"vendor/*"})
+		if err != nil {
+			return err
 		}
+		return os.WriteFile(pkgJSONPath, []byte(newJSON), 0644)
 	}
 
-	// Check if "vendor/*" is already there
+	if !workspaces.IsArray() {
+		return fmt.Errorf("unsupported workspaces format in package.json (expected array)")
+	}
+
 	found := false
-	for _, w := range workspaces {
-		if str, isStr := w.(string); isStr && str == "vendor/*" {
+	for _, w := range workspaces.Array() {
+		if w.String() == "vendor/*" {
 			found = true
 			break
 		}
 	}
 
 	if !found {
-		workspaces = append(workspaces, "vendor/*")
-		data["workspaces"] = workspaces
-		return writeJSON(pkgJSONPath, data)
+		// Append to the existing array
+		newJSON, err := sjson.Set(jsonStr, "workspaces.-1", "vendor/*")
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(pkgJSONPath, []byte(newJSON), 0644)
 	}
 
 	return nil
@@ -51,64 +57,44 @@ func EnsureWorkspace(pkgJSONPath string) error {
 // EnsureImport ensures that an import map entry exists for the vendored package.
 // e.g. "#vendor/pkg": "./vendor/pkg"
 func EnsureImport(pkgJSONPath, pkgName string) error {
-	data, err := readJSON(pkgJSONPath)
+	b, err := os.ReadFile(pkgJSONPath)
 	if err != nil {
 		return err
 	}
-
-	importsRaw, ok := data["imports"]
-	var imports map[string]interface{}
-
-	if ok {
-		if impMap, isMap := importsRaw.(map[string]interface{}); isMap {
-			imports = impMap
-		} else {
-			return fmt.Errorf("unsupported imports format in package.json")
-		}
-	} else {
-		imports = make(map[string]interface{})
-	}
+	jsonStr := string(b)
 
 	alias := fmt.Sprintf("#vendor/%s", pkgName)
-	
-	// We point it to the vendor directory. Node.js might require an exact file if not using a bundler,
-	// but pointing to the directory works perfectly with modern bundlers and TS. 
-	// To be perfectly Node-compliant, we might need subpath exports, but this is a good start.
 	target := fmt.Sprintf("./vendor/%s", pkgName)
 
-	if imports[alias] == target {
+	importsResult := gjson.Get(jsonStr, "imports")
+
+	importsMap := make(map[string]string)
+	if importsResult.Exists() {
+		if importsResult.Type == gjson.JSON {
+			if err := json.Unmarshal([]byte(importsResult.Raw), &importsMap); err != nil {
+				return fmt.Errorf("failed to parse existing imports: %v", err)
+			}
+		} else {
+			return fmt.Errorf("imports is not a JSON object")
+		}
+	}
+
+	if val, ok := importsMap[alias]; ok && val == target {
 		return nil // Already exists
 	}
 
-	imports[alias] = target
-	data["imports"] = imports
+	importsMap[alias] = target
 
-	return writeJSON(pkgJSONPath, data)
-}
-
-func readJSON(path string) (map[string]interface{}, error) {
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-
-	var data map[string]interface{}
-	if err := json.Unmarshal(b, &data); err != nil {
-		return nil, err
-	}
-	return data, nil
-}
-
-func writeJSON(path string, data map[string]interface{}) error {
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	// Marshal the imports map. We use a custom encoding to avoid escaping HTML characters like '&'.
+	newImportsJSON, err := json.MarshalIndent(importsMap, "", "  ")
 	if err != nil {
 		return err
 	}
-	defer f.Close()
 
-	enc := json.NewEncoder(f)
-	enc.SetIndent("", "  ")
-	enc.SetEscapeHTML(false)
+	newJSON, err := sjson.SetRaw(jsonStr, "imports", string(newImportsJSON))
+	if err != nil {
+		return err
+	}
 
-	return enc.Encode(data)
+	return os.WriteFile(pkgJSONPath, []byte(newJSON), 0644)
 }

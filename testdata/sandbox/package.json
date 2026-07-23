@@ -1,18 +1,14 @@
 {
-  "author": "",
+  "name": "sandbox",
+  "version": "1.0.0",
   "description": "A dummy project to test vendor-cli",
-  "imports": {
-    "#vendor/is-odd": "./vendor/is-odd"
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
-  "license": "ISC",
-  "main": "index.js",
-  "name": "sandbox",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" \u0026\u0026 exit 1"
-  },
-  "version": "1.0.0",
-  "workspaces": [
-    "vendor/*"
-  ]
-}
+  "author": "",
+  "license": "ISC"
+,"workspaces":["vendor/*"],"imports":{
+  "#vendor/is-odd": "./vendor/is-odd"
+}}
