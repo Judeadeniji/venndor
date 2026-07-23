@@ -50,303 +50,313 @@ func init() {
 	statusCmd.Flags().Bool("check-updates", false, "Check registry for newer versions available")
 }
 
+func runAdd(cmd *cobra.Command, args []string) {
+	pkgArg := args[0]
+
+	// Parse pkg and version
+	pkgName := pkgArg
+	version := ""
+
+	// Handle scoped packages like @org/pkg@1.0.0
+	idx := strings.LastIndex(pkgArg, "@")
+	if idx > 0 { // > 0 to skip the first character in case it's a scoped package
+		pkgName = pkgArg[:idx]
+		version = pkgArg[idx+1:]
+	}
+
+	destDir := filepath.Join("vendor", pkgName)
+
+	fmt.Printf("Vendoring %s into %s...\n", pkgArg, destDir)
+	targetVersion, tarballURL, err := npm.FetchAndExtract(pkgName, version, destDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Configuring workspace and imports...\n")
+	pkgJSONPath := "package.json"
+
+	if err := manifest.EnsureWorkspace(pkgJSONPath); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to add to workspaces: %v\n", err)
+	}
+
+	if err := manifest.EnsureImport(pkgJSONPath, pkgName); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to add import alias: %v\n", err)
+	}
+
+	fmt.Printf("Updating vendor.yaml and vendor-lock.json...\n")
+	if err := manifest.RecordManifest(pkgName, targetVersion, tarballURL, destDir); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to write manifest: %v\n", err)
+	}
+
+	fmt.Printf("Running install...\n")
+	manager, useCorepack, err := pm.Detect()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to detect package manager: %v\n", err)
+	} else {
+		if err := pm.Install(manager, useCorepack); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: install failed: %v\n", err)
+		}
+	}
+
+	fmt.Printf("Successfully vendored %s@%s\n", pkgName, targetVersion)
+}
+
 var addCmd = &cobra.Command{
 	Use:   "add <pkg>[@version]",
 	Short: "Vendor a package from npm",
 	Args:  cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
-		pkgArg := args[0]
+	Run:   runAdd,
+}
 
-		// Parse pkg and version
-		pkgName := pkgArg
-		version := ""
+func runRemove(cmd *cobra.Command, args []string) {
+	pkgName := args[0]
+	fmt.Printf("Removing %s...\n", pkgName)
 
-		// Handle scoped packages like @org/pkg@1.0.0
-		idx := strings.LastIndex(pkgArg, "@")
-		if idx > 0 { // > 0 to skip the first character in case it's a scoped package
-			pkgName = pkgArg[:idx]
-			version = pkgArg[idx+1:]
+	// 1. Remove from vendor.yaml and vendor-lock.json
+	if err := manifest.RemoveManifest(pkgName); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to update manifest files: %v\n", err)
+	}
+
+	// 2. Remove import alias from package.json
+	pkgJSONPath := "package.json"
+	if err := manifest.RemoveImport(pkgJSONPath, pkgName); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to remove import alias: %v\n", err)
+	}
+
+	// 3. Delete vendor files
+	destDir := filepath.Join("vendor", pkgName)
+	if err := os.RemoveAll(destDir); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to delete %s: %v\n", destDir, err)
+	}
+
+	// 4. Delete patch file if it exists
+	safeName := strings.ReplaceAll(pkgName, "/", "-")
+	patchFile := filepath.Join("patches", safeName+".patch")
+	os.Remove(patchFile)
+
+	// 5. Delete from cache (optional but keeps node_modules/.vendor-cache clean)
+	// We could do this if we look up the version first, but for now it's okay to leave or let npm prune.
+
+	fmt.Printf("Running install to sync node_modules...\n")
+	manager, useCorepack, err := pm.Detect()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to detect package manager: %v\n", err)
+	} else {
+		if err := pm.Install(manager, useCorepack); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: install failed: %v\n", err)
 		}
+	}
 
-		destDir := filepath.Join("vendor", pkgName)
-
-		fmt.Printf("Vendoring %s into %s...\n", pkgArg, destDir)
-		targetVersion, tarballURL, err := npm.FetchAndExtract(pkgName, version, destDir)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
-		}
-
-		fmt.Printf("Configuring workspace and imports...\n")
-		pkgJSONPath := "package.json"
-
-		if err := manifest.EnsureWorkspace(pkgJSONPath); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to add to workspaces: %v\n", err)
-		}
-
-		if err := manifest.EnsureImport(pkgJSONPath, pkgName); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to add import alias: %v\n", err)
-		}
-
-		fmt.Printf("Updating vendor.yaml and vendor-lock.json...\n")
-		if err := manifest.RecordManifest(pkgName, targetVersion, tarballURL, destDir); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to write manifest: %v\n", err)
-		}
-
-		fmt.Printf("Running install...\n")
-		manager, useCorepack, err := pm.Detect()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to detect package manager: %v\n", err)
-		} else {
-			if err := pm.Install(manager, useCorepack); err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: install failed: %v\n", err)
-			}
-		}
-
-		fmt.Printf("Successfully vendored %s@%s\n", pkgName, targetVersion)
-	},
+	fmt.Printf("Successfully removed %s\n", pkgName)
 }
 
 var removeCmd = &cobra.Command{
 	Use:   "remove <pkg>",
 	Short: "Remove a vendored package",
 	Args:  cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
-		pkgName := args[0]
-		fmt.Printf("Removing %s...\n", pkgName)
+	Run:   runRemove,
+}
 
-		// 1. Remove from vendor.yaml and vendor-lock.json
-		if err := manifest.RemoveManifest(pkgName); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to update manifest files: %v\n", err)
-		}
+func runUpdate(cmd *cobra.Command, args []string) {
+	if len(args) == 0 {
+		fmt.Println("TODO: Implement update all")
+		return
+	}
+	pkgName := args[0]
 
-		// 2. Remove import alias from package.json
-		pkgJSONPath := "package.json"
-		if err := manifest.RemoveImport(pkgJSONPath, pkgName); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to remove import alias: %v\n", err)
-		}
+	fmt.Printf("Updating %s...\n", pkgName)
 
-		// 3. Delete vendor files
-		destDir := filepath.Join("vendor", pkgName)
-		if err := os.RemoveAll(destDir); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to delete %s: %v\n", destDir, err)
-		}
+	pkgConfig, err := manifest.GetPackageConfig(pkgName)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: package %s not found in vendor.yaml\n", pkgName)
+		os.Exit(1)
+	}
 
-		// 4. Delete patch file if it exists
+	// 1. Fetch metadata to find the latest version
+	targetVersion, tarballURL, err := npm.FetchMetadata(pkgName, "")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error fetching metadata: %v\n", err)
+		os.Exit(1)
+	}
+
+	if pkgConfig.Version == targetVersion {
+		fmt.Printf("Package %s is already up to date (%s)\n", pkgName, targetVersion)
+		return
+	}
+
+	fmt.Printf("Found newer version: %s (current: %s)\n", targetVersion, pkgConfig.Version)
+
+	destDir := filepath.Join("vendor", pkgName)
+
+	// 2. Download and extract new version
+	// FetchAndExtract also saves to node_modules/.vendor-cache
+	_, _, err = npm.FetchAndExtract(pkgName, targetVersion, destDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error updating package: %v\n", err)
+		os.Exit(1)
+	}
+
+	// 3. Re-apply patches if any
+	if pkgConfig.Patched {
 		safeName := strings.ReplaceAll(pkgName, "/", "-")
 		patchFile := filepath.Join("patches", safeName+".patch")
-		os.Remove(patchFile)
 
-		// 5. Delete from cache (optional but keeps node_modules/.vendor-cache clean)
-		// We could do this if we look up the version first, but for now it's okay to leave or let npm prune.
-
-		fmt.Printf("Running install to sync node_modules...\n")
-		manager, useCorepack, err := pm.Detect()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to detect package manager: %v\n", err)
+		fmt.Printf("Re-applying patch %s...\n", patchFile)
+		if err := patch.Apply(patchFile, destDir); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to cleanly apply patch. You may need to resolve conflicts manually.\nError: %v\n", err)
 		} else {
-			if err := pm.Install(manager, useCorepack); err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: install failed: %v\n", err)
-			}
+			fmt.Printf("Patch applied successfully.\n")
 		}
+	}
 
-		fmt.Printf("Successfully removed %s\n", pkgName)
-	},
+	// 4. Update manifest
+	if err := manifest.RecordManifest(pkgName, targetVersion, tarballURL, destDir); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to write manifest: %v\n", err)
+	}
+
+	// Ensure patched flag is preserved
+	if pkgConfig.Patched {
+		safeName := strings.ReplaceAll(pkgName, "/", "-")
+		patchFile := filepath.Join("patches", safeName+".patch")
+		manifest.MarkPatched(pkgName, patchFile)
+	}
+
+	fmt.Printf("Running install...\n")
+	manager, useCorepack, err := pm.Detect()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to detect package manager: %v\n", err)
+	} else {
+		if err := pm.Install(manager, useCorepack); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: install failed: %v\n", err)
+		}
+	}
+
+	fmt.Printf("Successfully updated %s to %s\n", pkgName, targetVersion)
 }
 
 var updateCmd = &cobra.Command{
 	Use:   "update [pkg]",
 	Short: "Update a vendored package (or all if omitted)",
 	Args:  cobra.MaximumNArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
-		if len(args) == 0 {
-			fmt.Println("TODO: Implement update all")
-			return
-		}
-		pkgName := args[0]
-		
-		fmt.Printf("Updating %s...\n", pkgName)
+	Run:   runUpdate,
+}
 
-		pkgConfig, err := manifest.GetPackageConfig(pkgName)
+func runDiff(cmd *cobra.Command, args []string) {
+	pkgName := args[0]
+
+	fmt.Printf("Generating diff for %s...\n", pkgName)
+
+	pkgConfig, err := manifest.GetPackageConfig(pkgName)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	cachePath := npm.GetCachePath(pkgName, pkgConfig.Version)
+	if _, err := os.Stat(cachePath); os.IsNotExist(err) {
+		lock, err := manifest.GetPackageLock(pkgName)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: package %s not found in vendor.yaml\n", pkgName)
+			fmt.Fprintf(os.Stderr, "Error: cache missing and could not read lockfile: %v\n", err)
 			os.Exit(1)
 		}
-
-		// 1. Fetch metadata to find the latest version
-		targetVersion, tarballURL, err := npm.FetchMetadata(pkgName, "")
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error fetching metadata: %v\n", err)
+		fmt.Printf("Cache missing. Re-downloading %s...\n", lock.Resolved)
+		if err := npm.Download(lock.Resolved, cachePath); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: failed to download tarball: %v\n", err)
 			os.Exit(1)
 		}
+	}
 
-		if pkgConfig.Version == targetVersion {
-			fmt.Printf("Package %s is already up to date (%s)\n", pkgName, targetVersion)
-			return
+	tmpDir, err := os.MkdirTemp("", "venndor-diff-*")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: failed to create temp dir: %v\n", err)
+		os.Exit(1)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	pristineDir := filepath.Join(tmpDir, pkgName)
+	if err := npm.ExtractLocalTarGz(cachePath, pristineDir); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: failed to extract pristine tarball: %v\n", err)
+		os.Exit(1)
+	}
+
+	vendoredDir := filepath.Join("vendor", pkgName)
+
+	foundDiff, err := patch.Generate(pkgName, pristineDir, vendoredDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error generating patch: %v\n", err)
+		os.Exit(1)
+	}
+
+	if foundDiff {
+		safeName := strings.ReplaceAll(pkgName, "/", "-")
+		patchFile := filepath.Join("patches", safeName+".patch")
+		if err := manifest.MarkPatched(pkgName, patchFile); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to update manifest: %v\n", err)
 		}
-
-		fmt.Printf("Found newer version: %s (current: %s)\n", targetVersion, pkgConfig.Version)
-
-		destDir := filepath.Join("vendor", pkgName)
-
-		// 2. Download and extract new version
-		// FetchAndExtract also saves to node_modules/.vendor-cache
-		_, _, err = npm.FetchAndExtract(pkgName, targetVersion, destDir)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error updating package: %v\n", err)
-			os.Exit(1)
-		}
-
-		// 3. Re-apply patches if any
-		if pkgConfig.Patched {
-			safeName := strings.ReplaceAll(pkgName, "/", "-")
-			patchFile := filepath.Join("patches", safeName+".patch")
-			
-			fmt.Printf("Re-applying patch %s...\n", patchFile)
-			if err := patch.Apply(patchFile, destDir); err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: failed to cleanly apply patch. You may need to resolve conflicts manually.\nError: %v\n", err)
-			} else {
-				fmt.Printf("Patch applied successfully.\n")
-			}
-		}
-
-		// 4. Update manifest
-		if err := manifest.RecordManifest(pkgName, targetVersion, tarballURL, destDir); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to write manifest: %v\n", err)
-		}
-
-		// Ensure patched flag is preserved
-		if pkgConfig.Patched {
-			safeName := strings.ReplaceAll(pkgName, "/", "-")
-			patchFile := filepath.Join("patches", safeName+".patch")
-			manifest.MarkPatched(pkgName, patchFile)
-		}
-
-		fmt.Printf("Running install...\n")
-		manager, useCorepack, err := pm.Detect()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to detect package manager: %v\n", err)
-		} else {
-			if err := pm.Install(manager, useCorepack); err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: install failed: %v\n", err)
-			}
-		}
-
-		fmt.Printf("Successfully updated %s to %s\n", pkgName, targetVersion)
-	},
+		fmt.Printf("Patch generated at %s\n", patchFile)
+	} else {
+		fmt.Printf("No differences found. Package is clean.\n")
+	}
 }
 
 var diffCmd = &cobra.Command{
 	Use:   "diff <pkg>",
 	Short: "Generate a patch file for a vendored package",
 	Args:  cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
-		pkgName := args[0]
-		
-		fmt.Printf("Generating diff for %s...\n", pkgName)
+	Run:   runDiff,
+}
 
-		pkgConfig, err := manifest.GetPackageConfig(pkgName)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
+func runStatus(cmd *cobra.Command, args []string) {
+	checkUpdates, _ := cmd.Flags().GetBool("check-updates")
+
+	b, err := os.ReadFile("vendor.yaml")
+	if err != nil {
+		if os.IsNotExist(err) {
+			fmt.Println("No vendor.yaml found. Repo is not tracking any vendored packages.")
+			return
+		}
+		fmt.Fprintf(os.Stderr, "Error reading vendor.yaml: %v\n", err)
+		os.Exit(1)
+	}
+
+	var config manifest.VendorYAML
+	if err := yaml.Unmarshal(b, &config); err != nil {
+		fmt.Fprintf(os.Stderr, "Error parsing vendor.yaml: %v\n", err)
+		os.Exit(1)
+	}
+
+	if len(config.Packages) == 0 {
+		fmt.Println("No vendored packages found.")
+		return
+	}
+
+	fmt.Printf("Vendored packages (%d):\n", len(config.Packages))
+	for name, pkg := range config.Packages {
+		statusLine := fmt.Sprintf("  - %s@%s", name, pkg.Version)
+		if pkg.Patched {
+			statusLine += " [PATCHED]"
 		}
 
-		cachePath := npm.GetCachePath(pkgName, pkgConfig.Version)
-		if _, err := os.Stat(cachePath); os.IsNotExist(err) {
-			lock, err := manifest.GetPackageLock(pkgName)
+		if checkUpdates {
+			latest, _, err := npm.FetchMetadata(name, "")
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: cache missing and could not read lockfile: %v\n", err)
-				os.Exit(1)
-			}
-			fmt.Printf("Cache missing. Re-downloading %s...\n", lock.Resolved)
-			if err := npm.Download(lock.Resolved, cachePath); err != nil {
-				fmt.Fprintf(os.Stderr, "Error: failed to download tarball: %v\n", err)
-				os.Exit(1)
+				statusLine += fmt.Sprintf(" (error checking updates: %v)", err)
+			} else if latest != pkg.Version {
+				statusLine += fmt.Sprintf(" -> Update available: %s", latest)
+			} else {
+				statusLine += " (up to date)"
 			}
 		}
-
-		tmpDir, err := os.MkdirTemp("", "venndor-diff-*")
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: failed to create temp dir: %v\n", err)
-			os.Exit(1)
-		}
-		defer os.RemoveAll(tmpDir)
-
-		pristineDir := filepath.Join(tmpDir, pkgName)
-		if err := npm.ExtractLocalTarGz(cachePath, pristineDir); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: failed to extract pristine tarball: %v\n", err)
-			os.Exit(1)
-		}
-
-		vendoredDir := filepath.Join("vendor", pkgName)
-		
-		foundDiff, err := patch.Generate(pkgName, pristineDir, vendoredDir)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error generating patch: %v\n", err)
-			os.Exit(1)
-		}
-
-		if foundDiff {
-			safeName := strings.ReplaceAll(pkgName, "/", "-")
-			patchFile := filepath.Join("patches", safeName+".patch")
-			if err := manifest.MarkPatched(pkgName, patchFile); err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: failed to update manifest: %v\n", err)
-			}
-			fmt.Printf("Patch generated at %s\n", patchFile)
-		} else {
-			fmt.Printf("No differences found. Package is clean.\n")
-		}
-	},
+		fmt.Println(statusLine)
+	}
 }
 
 var statusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "List vendored packages",
 	Args:  cobra.NoArgs,
-	Run: func(cmd *cobra.Command, args []string) {
-		checkUpdates, _ := cmd.Flags().GetBool("check-updates")
-		
-		b, err := os.ReadFile("vendor.yaml")
-		if err != nil {
-			if os.IsNotExist(err) {
-				fmt.Println("No vendor.yaml found. Repo is not tracking any vendored packages.")
-				return
-			}
-			fmt.Fprintf(os.Stderr, "Error reading vendor.yaml: %v\n", err)
-			os.Exit(1)
-		}
-
-		var config manifest.VendorYAML
-		if err := yaml.Unmarshal(b, &config); err != nil {
-			fmt.Fprintf(os.Stderr, "Error parsing vendor.yaml: %v\n", err)
-			os.Exit(1)
-		}
-
-		if len(config.Packages) == 0 {
-			fmt.Println("No vendored packages found.")
-			return
-		}
-
-		fmt.Printf("Vendored packages (%d):\n", len(config.Packages))
-		for name, pkg := range config.Packages {
-			statusLine := fmt.Sprintf("  - %s@%s", name, pkg.Version)
-			if pkg.Patched {
-				statusLine += " [PATCHED]"
-			}
-			
-			if checkUpdates {
-				latest, _, err := npm.FetchMetadata(name, "")
-				if err != nil {
-					statusLine += fmt.Sprintf(" (error checking updates: %v)", err)
-				} else if latest != pkg.Version {
-					statusLine += fmt.Sprintf(" -> Update available: %s", latest)
-				} else {
-					statusLine += " (up to date)"
-				}
-			}
-			fmt.Println(statusLine)
-		}
-	},
+	Run:   runStatus,
 }
 
 var syncCmd = &cobra.Command{
@@ -356,7 +366,7 @@ var syncCmd = &cobra.Command{
 	Args:    cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println("Syncing workspace...")
-		
+
 		pkgJSONPath := "package.json"
 		if err := manifest.EnsureWorkspace(pkgJSONPath); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to add to workspaces: %v\n", err)
@@ -388,33 +398,35 @@ var syncCmd = &cobra.Command{
 	},
 }
 
+func runInit(cmd *cobra.Command, args []string) {
+	fmt.Println("Initializing venndor...")
+
+	if _, err := os.Stat("vendor.yaml"); os.IsNotExist(err) {
+		os.WriteFile("vendor.yaml", []byte("version: 1\npackages: {}\n"), 0644)
+		fmt.Println("Created vendor.yaml")
+	} else {
+		fmt.Println("vendor.yaml already exists")
+	}
+
+	if _, err := os.Stat("vendor-lock.json"); os.IsNotExist(err) {
+		os.WriteFile("vendor-lock.json", []byte("{\n  \"lockfileVersion\": 1,\n  \"packages\": {}\n}\n"), 0644)
+		fmt.Println("Created vendor-lock.json")
+	} else {
+		fmt.Println("vendor-lock.json already exists")
+	}
+
+	if err := manifest.EnsureWorkspace("package.json"); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to set up workspaces in package.json: %v\n", err)
+	} else {
+		fmt.Println("Configured workspaces in package.json")
+	}
+
+	fmt.Println("Initialization complete. Run `vendor add <pkg>` to vendor your first package!")
+}
+
 var initCmd = &cobra.Command{
 	Use:   "init",
 	Short: "First-time setup",
 	Args:  cobra.NoArgs,
-	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("Initializing venndor...")
-
-		if _, err := os.Stat("vendor.yaml"); os.IsNotExist(err) {
-			os.WriteFile("vendor.yaml", []byte("version: 1\npackages: {}\n"), 0644)
-			fmt.Println("Created vendor.yaml")
-		} else {
-			fmt.Println("vendor.yaml already exists")
-		}
-
-		if _, err := os.Stat("vendor-lock.json"); os.IsNotExist(err) {
-			os.WriteFile("vendor-lock.json", []byte("{\n  \"lockfileVersion\": 1,\n  \"packages\": {}\n}\n"), 0644)
-			fmt.Println("Created vendor-lock.json")
-		} else {
-			fmt.Println("vendor-lock.json already exists")
-		}
-
-		if err := manifest.EnsureWorkspace("package.json"); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to set up workspaces in package.json: %v\n", err)
-		} else {
-			fmt.Println("Configured workspaces in package.json")
-		}
-
-		fmt.Println("Initialization complete. Run `vendor add <pkg>` to vendor your first package!")
-	},
+	Run:   runInit,
 }
