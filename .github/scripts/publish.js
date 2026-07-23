@@ -22,7 +22,7 @@ const distDir = path.join(__dirname, '../../dist');
 const optionalDependencies = {};
 
 for (const p of platforms) {
-  const pkgName = `venndor-${p.os}-${p.cpu}`;
+  const pkgName = `@judeadeniji/venndor-${p.os}-${p.cpu}`;
   optionalDependencies[pkgName] = version;
   
   const pkgDir = path.join(__dirname, '../../npm-packages', pkgName);

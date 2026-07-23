@@ -17,7 +17,7 @@ if (!osStr || !archStr) {
   process.exit(1);
 }
 
-const pkgName = `venndor-${osStr}-${archStr}`;
+const pkgName = `@judeadeniji/venndor-${osStr}-${archStr}`;
 let binPath;
 
 try {
