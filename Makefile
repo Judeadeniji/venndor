@@ -6,8 +6,8 @@ LDFLAGS="-s -w"
 build:
 	CGO_ENABLED=0 go build -ldflags=$(LDFLAGS) -o bin/$(BINARY_NAME) cmd/vendor/main.go
 
-run: build
-	./bin/$(BINARY_NAME)
+run:
+	go run cmd/vendor/main.go
 
 test:
 	go test ./...
