@@ -18,7 +18,7 @@ With `venndor`, you can make local hacks or emergency fixes to npm packages seam
 Install globally using your favorite package manager:
 
 ```bash
-npm install -g venndor
+npm install -g @judeadeniji/venndor
 ```
 
 Or via Go:
