@@ -160,7 +160,24 @@ var removeCmd = &cobra.Command{
 
 func runUpdate(cmd *cobra.Command, args []string) {
 	if len(args) == 0 {
-		fmt.Println("TODO: Implement update all")
+		fmt.Println("Updating all vendored packages...")
+		b, err := os.ReadFile("vendor.yaml")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: no vendor.yaml found: %v\n", err)
+			os.Exit(1)
+		}
+		var config manifest.VendorYAML
+		if err := yaml.Unmarshal(b, &config); err != nil {
+			fmt.Fprintf(os.Stderr, "Error parsing vendor.yaml: %v\n", err)
+			os.Exit(1)
+		}
+		if len(config.Packages) == 0 {
+			fmt.Println("No packages to update.")
+			return
+		}
+		for name := range config.Packages {
+			runUpdate(cmd, []string{name})
+		}
 		return
 	}
 	pkgName := args[0]
