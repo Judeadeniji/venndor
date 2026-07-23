@@ -6,8 +6,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/spf13/cobra"
+	"github.com/judeadeniji/venndor/internal/manifest"
 	"github.com/judeadeniji/venndor/internal/npm"
+	"github.com/spf13/cobra"
 )
 
 var (
@@ -70,6 +71,17 @@ var addCmd = &cobra.Command{
 		if err := npm.FetchAndExtract(pkgName, version, destDir); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
+		}
+
+		fmt.Printf("Configuring workspace and imports...\n")
+		pkgJSONPath := "package.json"
+		
+		if err := manifest.EnsureWorkspace(pkgJSONPath); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to add to workspaces: %v\n", err)
+		}
+		
+		if err := manifest.EnsureImport(pkgJSONPath, pkgName); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to add import alias: %v\n", err)
 		}
 		
 		fmt.Printf("Successfully vendored %s\n", pkgName)
