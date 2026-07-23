@@ -47,6 +47,11 @@ jobs:
           npm version $VERSION --no-git-tag-version
       
       - name: Publish to NPM
-        run: npm publish
+        run: |
+          if [[ "$VERSION" == *"-"* ]]; then
+            npm publish --tag next
+          else
+            npm publish
+          fi
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

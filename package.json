@@ -1,6 +1,6 @@
 {
   "name": "venndor",
-  "version": "1.0.0",
+  "version": "0.1.0-beta.1",
   "description": "Vendor npm packages directly into your repo as owned source.",
   "main": "npm/run.js",
   "bin": {
@@ -21,6 +21,6 @@
     "manager",
     "cli"
   ],
-  "author": "Jude Adeniji",
+  "author": "Oluwaferanmi Adeniji",
   "license": "MIT"
 }
