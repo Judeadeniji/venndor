@@ -1,76 +1,85 @@
 # venndor 📦
 
-> Vendor npm packages directly into your repo as owned source, while retaining upstream tracking, updates, and custom patching natively.
+[![npm version](https://img.shields.io/npm/v/%40judeadeniji%2Fvenndor.svg)](https://www.npmjs.com/package/@judeadeniji/venndor)
+[![Release](https://img.shields.io/github/v/release/judeadeniji/venndor?include_prereleases)](https://github.com/Judeadeniji/venndor/releases)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-**venndor** is a pragmatic CLI tool designed to cleanly inline Node dependencies directly into a `vendor/` directory in your repository. It acts exactly like standard workspace management but gives you total ownership over the raw source code of the dependencies you pull.
+> Pull an npm package's actual code into your repo, keep it up to date, and keep your own edits when you upgrade it.
 
-With `venndor`, you can make local hacks or emergency fixes to npm packages seamlessly via `.patch` generation and reapply them automatically when upgrading the package!
+`venndor` copies a dependency's real source code into a `vendor/` folder in your project, instead of leaving it hidden away in `node_modules`. You get to read it, change it, and review it like any other file in your repo, without giving up the ability to pull in upstream updates later.
 
-## Features
+It doesn't reinvent anything: `venndor` just fetches the package and lets your normal package manager (npm, yarn, pnpm, or bun) install it like usual. It only adds the wiring to make that work smoothly.
 
-- **Intelligent Package Manager Detection**: Automatically intercepts `npm`, `yarn`, `pnpm`, or `bun` via lockfiles or `corepack`.
-- **Zero Configuration**: Non-destructive integration with your `package.json` workspaces. Modifies files via surgically precise AST-like string modifications.
-- **Diff & Patch Generation**: Generates standard unified diff patches and stores them automatically in `patches/`.
-- **Smart Upgrades**: Upgrading vendored packages intelligently fetches new versions while flawlessly attempting to re-apply any local modifications via `patch -p2`.
+## Why
 
-## Installation
+Sometimes you need to fix or tweak a dependency right now: a bug that can't wait for the maintainer, a small behavior change, or you just want that code to be visible and reviewable instead of buried in `node_modules`.
 
-Install globally using your favorite package manager:
+The usual ways to do this each cost you something:
+
+- **Forking the package**: works, but now you're maintaining a whole separate copy that needs to stay in sync
+- **`patch-package`**: patches the installed files automatically, but the code itself is still hidden in `node_modules`, so it never shows up in a code review
+- **git submodule or subtree**: fine if you're pulling from source, but what's published on npm often doesn't match the raw git repo (built files, trimmed folders, etc.)
+
+`venndor` downloads the exact package you'd get from `npm install`, puts it in your repo as normal files, and keeps track of any changes you make so they can be reapplied automatically the next time you upgrade.
+
+## Install
 
 ```bash
 npm install -g @judeadeniji/venndor
 ```
 
-Or via Go:
 ```bash
 go install github.com/judeadeniji/venndor/cmd/vendor@latest
 ```
 
-## Usage
+## Quickstart
 
-**`venndor init`**
-Bootstraps the project explicitly, setting up `vendor.yaml`, `vendor-lock.json`, and configuring `package.json` workspaces. (You don't *need* to run this, `add` will do it automatically!)
-
-**`venndor add <pkg>[@version]`**
-Downloads the package from the registry and extracts it precisely to `vendor/<pkg>`. It injects a clean `#vendor/<pkg>` alias into the `package.json` `imports` map.
 ```bash
-venndor add is-even
+venndor add is-even        # download it, add it to your project, done
+```
+
+```js
+import isEven from "#vendor/is-even";
+```
+
+That's it. `is-even`'s code now lives in `vendor/is-even` in your repo, and that import just works, no extra config needed.
+
+Now say you edit that code directly:
+
+```bash
+venndor diff is-even        # save your edit as a patch file
+venndor update is-even      # later: get the newest version, reapply your edit on top
+```
+
+## Commands
+
+| Command | What it does |
+|---|---|
+| `venndor add <pkg>[@version]` | Downloads the package and adds it to `vendor/<pkg>`, so you can import it right away |
+| `venndor init` | Sets up the project for vendoring. You don't need to run this yourself, `add` does it automatically the first time |
+| `venndor diff <pkg>` | Saves your local edits as a patch file, so they aren't lost |
+| `venndor status [--check-updates]` | Shows which packages are vendored and which have local edits. Add `--check-updates` to also check npm for newer versions |
+| `venndor update [pkg]` | Downloads the newest version (or one you specify) and reapplies your saved edits on top. If an edit can't be reapplied cleanly, it tells you instead of guessing |
+| `venndor sync` | Fixes up your project setup and reinstalls, useful after cloning the repo fresh or editing `package.json` by hand |
+| `venndor remove <pkg>` | Deletes the package and everything venndor added for it, then cleans up |
+
+```bash
 venndor add lodash@4.17.21
-```
-
-**`venndor diff <pkg>`**
-Generates a `.patch` file for any edits made to the vendored source code inside the `vendor/` directory, comparing it against the untouched original source fetched from `.vendor-cache/`.
-```bash
-venndor diff is-even
-```
-
-**`venndor status`**
-Lists all vendored packages, showing whether they have local `[PATCHED]` modifications, and checking the registry for any available upstream versions.
-```bash
-venndor status --check-updates
-```
-
-**`venndor update [pkg]`**
-Upgrades the specified package (or all packages if run without arguments) to the latest version, fetching the new tarball and re-applying your generated `.patch` files on top.
-```bash
-venndor update is-even
-venndor update
-```
-
-**`venndor sync`**
-Re-applies the workspace maps to `package.json` and syncs `node_modules` across the board using your natively detected package manager.
-
-**`venndor remove <pkg>`**
-Safely purges the package entirely out of the tracking manifest, deletes the folder, strips out the import configurations, removes leftover `.patch` overrides, and cleans `node_modules`.
-```bash
+venndor update            # update everything that has a saved edit
 venndor remove is-even
 ```
 
-## Architecture Notes
+## How it works
 
-- Raw `.tgz` npm registry tarballs are cached directly into `node_modules/.vendor-cache` to facilitate true, pristine offline diffing operations.
-- Built via standard library Go + Cobra CLI for incredible performance.
-- Binaries are compiled strictly via GitHub Actions + GoReleaser.
+- **It figures out your package manager on its own** (npm, yarn, pnpm, or bun), so you don't have to tell it.
+- **It edits `package.json` carefully**, keeping the formatting and field order you already had, instead of rewriting the whole file.
+- **A clean copy of each package is cached locally**, so your saved edits can always be compared against the original, untouched version.
+- **Your edits are saved as plain patch files**, the same kind of file `git` and other tools already use. If a saved edit can't be applied to a new version (because the upstream code changed in the same spot), venndor won't silently overwrite your change. It tells you so you can fix it by hand.
+- Built in Go, with prebuilt downloads for every major OS so installing it doesn't require compiling anything yourself.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
